@@ -13,7 +13,7 @@ def split_date_range(from_date, to_date, max_days=365):
     """Split a date range into chunks of max_days."""
     chunks = []
     current_start = from_date
-    while current_start < to_date:
+    while current_start <= to_date:
         current_end = min(current_start + timedelta(days=max_days - 1), to_date)
         chunks.append((current_start, current_end))
         current_start = current_end + timedelta(days=1)
@@ -28,11 +28,11 @@ def download_stock_data(symbol, from_date_str, to_date_str):
     from_d = date(from_dt.year, from_dt.month, from_dt.day)
     to_d = date(to_dt.year, to_dt.month, to_dt.day)
 
-    if from_d >= to_d:
-        print("Error: From date must be before To date.")
+    if from_d > to_d:
+        print("Error: From date must be on or before To date.")
         return None
 
-    total_days = (to_d - from_d).days
+    total_days = (to_d - from_d).days + 1
     print(f"\nStock: {symbol.upper()}")
     print(f"Period: {from_date_str} to {to_date_str} ({total_days} days)")
 
@@ -61,6 +61,9 @@ def download_stock_data(symbol, from_date_str, to_date_str):
                     print("No records.")
                 break
             except Exception as e:
+                if "are in the [columns]" in str(e):
+                    print("No records.")
+                    break
                 if attempt < retries:
                     print(f"\n  Attempt {attempt} failed: {e}. Retrying in 5s...")
                     time.sleep(5)
@@ -82,7 +85,8 @@ def download_stock_data(symbol, from_date_str, to_date_str):
         combined = combined.drop(columns=["SYMBOL"])
 
     # Convert DATE and sort
-    combined["DATE"] = pd.to_datetime(combined["DATE"])
+    # NSE dates arrive shifted to 18:30 of the previous UTC day.
+    combined["DATE"] = pd.to_datetime(combined["DATE"]) + pd.Timedelta(days=1)
     combined = combined.sort_values("DATE", ascending=True).reset_index(drop=True)
     combined = combined.drop_duplicates(subset=["DATE"], keep="first")
     combined["DATE"] = combined["DATE"].dt.strftime("%d-%b-%Y")
