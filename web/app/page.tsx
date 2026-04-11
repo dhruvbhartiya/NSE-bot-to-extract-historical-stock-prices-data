@@ -43,24 +43,36 @@ export default function Home() {
         to_date: formatDateForApi(toDate),
       });
 
-      // Retry up to 2 times (handles Lambda cold starts)
+      // Retry up to 3 times (handles Lambda cold starts & API Gateway timeouts)
       let lastError = "";
-      for (let attempt = 0; attempt < 2; attempt++) {
+      for (let attempt = 0; attempt < 3; attempt++) {
         try {
-          if (attempt > 0) setError("Retrying... (server was warming up)");
+          if (attempt === 1) setError("Server is warming up, retrying...");
+          if (attempt === 2) setError("Almost there, one more try...");
+
+          const controller = new AbortController();
+          const timeoutId = setTimeout(() => controller.abort(), 120000);
 
           const response = await fetch(API_URL, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: payload,
+            signal: controller.signal,
           });
+
+          clearTimeout(timeoutId);
 
           const data = await response.json();
 
           if (!response.ok) {
-            setError(data.error || "Something went wrong.");
-            if (data.suggestions) setSuggestions(data.suggestions);
-            return;
+            // Don't retry validation errors (invalid symbol, bad dates)
+            if (response.status === 400) {
+              setError(data.error || "Something went wrong.");
+              if (data.suggestions) setSuggestions(data.suggestions);
+              return;
+            }
+            // Retry server errors
+            throw new Error(data.error || "Server error");
           }
 
           setResult({ rows: data.rows, filename: data.filename });
@@ -74,14 +86,18 @@ export default function Home() {
           link.click();
           document.body.removeChild(link);
           return;
-        } catch {
-          lastError = attempt === 0
-            ? "Server is warming up, retrying automatically..."
-            : "Failed to connect to the server. Please try again.";
+        } catch (err) {
+          if (err instanceof Error && err.message && !err.message.includes("abort")) {
+            lastError = err.message;
+          } else {
+            lastError = "Failed to connect to the server.";
+          }
+          // Wait 2 seconds before retrying
+          if (attempt < 2) await new Promise(r => setTimeout(r, 2000));
         }
       }
 
-      setError(lastError);
+      setError(lastError + " Please try again.");
     } finally {
       setLoading(false);
     }
