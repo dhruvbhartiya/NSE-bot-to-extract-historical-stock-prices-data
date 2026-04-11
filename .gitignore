@@ -1,3 +1,11 @@
 downloads/
 __pycache__/
 *.pyc
+
+# Next.js
+web/node_modules/
+web/.next/
+web/.env.local
+
+# Lambda
+lambda/__pycache__/

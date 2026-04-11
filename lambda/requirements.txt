@@ -1,0 +1,4 @@
+jugaad-data
+pandas
+openpyxl
+boto3
