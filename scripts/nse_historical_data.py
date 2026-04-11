@@ -129,7 +129,7 @@ def main():
         sys.exit(1)
 
     print("\nEnter date range (format: DD-MM-YYYY)")
-    print("Note: For periods > 365 days, data is fetched in chunks automatically.\n")
+    print("Note: No limit on date range. Longer periods are auto-chunked.\n")
 
     from_date = input("From date (e.g., 01-04-2022): ").strip()
     to_date = input("To date   (e.g., 31-03-2026): ").strip()
