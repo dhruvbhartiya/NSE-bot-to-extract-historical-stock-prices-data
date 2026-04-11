@@ -1,18 +1,69 @@
 import json
 import os
 import uuid
+import difflib
 from datetime import date, datetime, timedelta
+
+# Set writable dirs before importing libraries that cache files
+os.environ["HOME"] = "/tmp"
+os.environ["APPDATA"] = "/tmp"
 
 import boto3
 import pandas as pd
-from jugaad_data.nse import stock_df
+from jugaad_data.nse import stock_df, NSELive
 import time
 import warnings
 
 warnings.filterwarnings("ignore")
 
+SYMBOLS_CACHE_PATH = "/tmp/nse_symbols.json"
+
 S3_BUCKET = os.environ.get("S3_BUCKET", "nse-historical-downloads")
-s3_client = boto3.client("s3")
+S3_REGION = os.environ.get("AWS_REGION", "ap-south-1")
+s3_client = boto3.client(
+    "s3",
+    region_name=S3_REGION,
+    endpoint_url=f"https://s3.{S3_REGION}.amazonaws.com",
+    config=boto3.session.Config(signature_version="s3v4"),
+)
+
+
+def get_valid_symbols():
+    """Get list of all valid EQ symbols from NSE. Cached in /tmp/ for Lambda reuse."""
+    if os.path.exists(SYMBOLS_CACHE_PATH):
+        cache_age = time.time() - os.path.getmtime(SYMBOLS_CACHE_PATH)
+        if cache_age < 86400:
+            with open(SYMBOLS_CACHE_PATH) as f:
+                return json.load(f)
+
+    try:
+        nse = NSELive()
+        all_symbols = set()
+        for idx in ["NIFTY 500", "NIFTY TOTAL MARKET"]:
+            try:
+                data = nse.live_index(idx)
+                if data and "data" in data:
+                    for s in data["data"]:
+                        all_symbols.add(s["symbol"])
+            except Exception:
+                continue
+        if all_symbols:
+            symbols = sorted(all_symbols)
+            with open(SYMBOLS_CACHE_PATH, "w") as f:
+                json.dump(symbols, f)
+            return symbols
+    except Exception:
+        pass
+
+    return []
+
+
+def find_similar_symbols(symbol, valid_symbols, n=5):
+    """Find symbols similar to the input using fuzzy matching."""
+    if not valid_symbols:
+        return []
+    matches = difflib.get_close_matches(symbol.upper(), valid_symbols, n=n, cutoff=0.5)
+    return matches
 
 
 def split_date_range(from_date, to_date, max_days=365):
@@ -104,6 +155,22 @@ def lambda_handler(event, context):
                 "body": json.dumps({"error": "From date must be before To date"}),
             }
 
+        # Validate symbol
+        valid_symbols = get_valid_symbols()
+        if valid_symbols and symbol not in valid_symbols:
+            suggestions = find_similar_symbols(symbol, valid_symbols)
+            error_msg = f"Invalid stock symbol: {symbol}."
+            if suggestions:
+                error_msg += f" Did you mean: {', '.join(suggestions)}?"
+            return {
+                "statusCode": 400,
+                "headers": headers,
+                "body": json.dumps({
+                    "error": error_msg,
+                    "suggestions": suggestions,
+                }),
+            }
+
         # Extract data
         df = extract_stock_data(symbol, from_d, to_d)
 
@@ -111,7 +178,7 @@ def lambda_handler(event, context):
             return {
                 "statusCode": 404,
                 "headers": headers,
-                "body": json.dumps({"error": f"No data found for {symbol}. Check the stock symbol."}),
+                "body": json.dumps({"error": f"No data found for {symbol} in this date range."}),
             }
 
         # Save to Excel in /tmp/

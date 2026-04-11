@@ -10,6 +10,7 @@ export default function Home() {
   const [toDate, setToDate] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [suggestions, setSuggestions] = useState<string[]>([]);
   const [result, setResult] = useState<{ rows: number; filename: string } | null>(null);
 
   const formatDateForApi = (dateStr: string) => {
@@ -20,6 +21,7 @@ export default function Home() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
+    setSuggestions([]);
     setResult(null);
 
     if (!symbol || !fromDate || !toDate) {
@@ -35,34 +37,51 @@ export default function Home() {
     setLoading(true);
 
     try {
-      const response = await fetch(API_URL, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          symbol: symbol.toUpperCase(),
-          from_date: formatDateForApi(fromDate),
-          to_date: formatDateForApi(toDate),
-        }),
+      const payload = JSON.stringify({
+        symbol: symbol.toUpperCase(),
+        from_date: formatDateForApi(fromDate),
+        to_date: formatDateForApi(toDate),
       });
 
-      const data = await response.json();
+      // Retry up to 2 times (handles Lambda cold starts)
+      let lastError = "";
+      for (let attempt = 0; attempt < 2; attempt++) {
+        try {
+          if (attempt > 0) setError("Retrying... (server was warming up)");
 
-      if (!response.ok) {
-        setError(data.error || "Something went wrong.");
-        return;
+          const response = await fetch(API_URL, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: payload,
+          });
+
+          const data = await response.json();
+
+          if (!response.ok) {
+            setError(data.error || "Something went wrong.");
+            if (data.suggestions) setSuggestions(data.suggestions);
+            return;
+          }
+
+          setResult({ rows: data.rows, filename: data.filename });
+          setError("");
+
+          // Auto-trigger download
+          const link = document.createElement("a");
+          link.href = data.download_url;
+          link.download = data.filename;
+          document.body.appendChild(link);
+          link.click();
+          document.body.removeChild(link);
+          return;
+        } catch {
+          lastError = attempt === 0
+            ? "Server is warming up, retrying automatically..."
+            : "Failed to connect to the server. Please try again.";
+        }
       }
 
-      setResult({ rows: data.rows, filename: data.filename });
-
-      // Auto-trigger download
-      const link = document.createElement("a");
-      link.href = data.download_url;
-      link.download = data.filename;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-    } catch {
-      setError("Failed to connect to the server. Please try again.");
+      setError(lastError);
     } finally {
       setLoading(false);
     }
@@ -141,6 +160,21 @@ export default function Home() {
           {error && (
             <div className="p-3 bg-red-900/50 border border-red-700 rounded-lg text-red-300 text-sm">
               {error}
+              {suggestions.length > 0 && (
+                <div className="mt-2 flex flex-wrap gap-2">
+                  <span className="text-red-400">Try:</span>
+                  {suggestions.map((s) => (
+                    <button
+                      key={s}
+                      type="button"
+                      onClick={() => { setSymbol(s); setError(""); setSuggestions([]); }}
+                      className="px-2 py-0.5 bg-blue-600 hover:bg-blue-700 text-white text-xs rounded transition-colors"
+                    >
+                      {s}
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
           )}
 
