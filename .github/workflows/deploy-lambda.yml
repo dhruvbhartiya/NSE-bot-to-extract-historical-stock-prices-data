@@ -1,0 +1,52 @@
+name: Deploy Lambda
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - 'lambda/handler.py'
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        run: |
+          pip install jugaad-data pandas openpyxl boto3 \
+            --target ./lambda/package \
+            --platform manylinux2014_x86_64 \
+            --only-binary=:all: \
+            --python-version 3.12 \
+            --quiet
+
+      - name: Build zip
+        run: |
+          cp lambda/handler.py lambda/package/
+          cd lambda/package
+          zip -r9q /tmp/lambda.zip . -x '__pycache__/*' '*.pyc'
+
+      - name: Upload to S3
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: ap-south-1
+        run: |
+          aws s3 cp /tmp/lambda.zip s3://nse-historical-downloads-dhruv/lambda-package.zip
+
+      - name: Update Lambda
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: ap-south-1
+        run: |
+          aws lambda update-function-code \
+            --function-name nse-historical-data \
+            --s3-bucket nse-historical-downloads-dhruv \
+            --s3-key lambda-package.zip \
+            --region ap-south-1
