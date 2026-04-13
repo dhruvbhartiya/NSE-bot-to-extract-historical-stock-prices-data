@@ -155,30 +155,29 @@ def lambda_handler(event, context):
                 "body": json.dumps({"error": "From date must be before To date"}),
             }
 
-        # Validate symbol
+        # Try extracting data first
         valid_symbols = get_valid_symbols()
-        if valid_symbols and symbol not in valid_symbols:
-            suggestions = find_similar_symbols(symbol, valid_symbols)
-            error_msg = f"Invalid stock symbol: {symbol}."
-            if suggestions:
-                error_msg += f" Did you mean: {', '.join(suggestions)}?"
-            return {
-                "statusCode": 400,
-                "headers": headers,
-                "body": json.dumps({
-                    "error": error_msg,
-                    "suggestions": suggestions,
-                }),
-            }
-
-        # Extract data
         df = extract_stock_data(symbol, from_d, to_d)
 
+        # If no data, check if it's an invalid symbol and suggest alternatives
         if df is None or len(df) == 0:
+            if valid_symbols:
+                suggestions = find_similar_symbols(symbol, valid_symbols)
+                error_msg = f"No data found for '{symbol}'."
+                if suggestions:
+                    error_msg += f" Did you mean: {', '.join(suggestions)}?"
+                return {
+                    "statusCode": 400,
+                    "headers": headers,
+                    "body": json.dumps({
+                        "error": error_msg,
+                        "suggestions": suggestions,
+                    }),
+                }
             return {
                 "statusCode": 404,
                 "headers": headers,
-                "body": json.dumps({"error": f"No data found for {symbol} in this date range."}),
+                "body": json.dumps({"error": f"No data found for '{symbol}'. Check the symbol and date range."}),
             }
 
         # Save to Excel in /tmp/

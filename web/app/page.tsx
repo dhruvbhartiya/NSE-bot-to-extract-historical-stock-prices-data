@@ -1,8 +1,11 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
+import nseSymbols from "./nse-symbols.json";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "";
+
+type Stock = { symbol: string; name: string };
 
 export default function Home() {
   const [symbol, setSymbol] = useState("");
@@ -12,6 +15,63 @@ export default function Home() {
   const [error, setError] = useState("");
   const [suggestions, setSuggestions] = useState<string[]>([]);
   const [result, setResult] = useState<{ rows: number; filename: string } | null>(null);
+
+  // Autocomplete state
+  const [dropdownItems, setDropdownItems] = useState<Stock[]>([]);
+  const [showDropdown, setShowDropdown] = useState(false);
+  const [selectedStock, setSelectedStock] = useState<Stock | null>(null);
+  const dropdownRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  // Filter stocks as user types
+  useEffect(() => {
+    if (!symbol || symbol.length < 1) {
+      setDropdownItems([]);
+      setShowDropdown(false);
+      return;
+    }
+
+    if (selectedStock && selectedStock.symbol === symbol) {
+      setShowDropdown(false);
+      return;
+    }
+
+    const query = symbol.toUpperCase();
+    const matches = (nseSymbols as Stock[])
+      .filter(
+        (s) =>
+          s.symbol.includes(query) ||
+          s.name.toUpperCase().includes(query)
+      )
+      .slice(0, 8);
+
+    setDropdownItems(matches);
+    setShowDropdown(matches.length > 0);
+  }, [symbol, selectedStock]);
+
+  // Close dropdown when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
+        setShowDropdown(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
+
+  const handleSelectStock = (stock: Stock) => {
+    setSymbol(stock.symbol);
+    setSelectedStock(stock);
+    setShowDropdown(false);
+    setError("");
+    setSuggestions([]);
+  };
+
+  const handleSymbolChange = (value: string) => {
+    setSymbol(value.toUpperCase());
+    setSelectedStock(null);
+  };
 
   const formatDateForApi = (dateStr: string) => {
     const [year, month, day] = dateStr.split("-");
@@ -23,6 +83,7 @@ export default function Home() {
     setError("");
     setSuggestions([]);
     setResult(null);
+    setShowDropdown(false);
 
     if (!symbol || !fromDate || !toDate) {
       setError("Please fill in all fields.");
@@ -65,20 +126,17 @@ export default function Home() {
           const data = await response.json();
 
           if (!response.ok) {
-            // Don't retry validation errors (invalid symbol, bad dates)
             if (response.status === 400) {
               setError(data.error || "Something went wrong.");
               if (data.suggestions) setSuggestions(data.suggestions);
               return;
             }
-            // Retry server errors
             throw new Error(data.error || "Server error");
           }
 
           setResult({ rows: data.rows, filename: data.filename });
           setError("");
 
-          // Auto-trigger download
           const link = document.createElement("a");
           link.href = data.download_url;
           link.download = data.filename;
@@ -92,7 +150,6 @@ export default function Home() {
           } else {
             lastError = "Failed to connect to the server.";
           }
-          // Wait 2 seconds before retrying
           if (attempt < 2) await new Promise(r => setTimeout(r, 2000));
         }
       }
@@ -114,18 +171,44 @@ export default function Home() {
         </div>
 
         <form onSubmit={handleSubmit} className="bg-gray-900 rounded-xl p-6 shadow-lg space-y-5">
-          <div>
+          <div ref={dropdownRef} className="relative">
             <label htmlFor="symbol" className="block text-sm font-medium text-gray-300 mb-1">
               Stock Symbol
             </label>
             <input
+              ref={inputRef}
               id="symbol"
               type="text"
-              placeholder="e.g. RELIANCE, TCS, INFY"
+              autoComplete="off"
+              placeholder="Type stock name or symbol..."
               value={symbol}
-              onChange={(e) => setSymbol(e.target.value.toUpperCase())}
+              onChange={(e) => handleSymbolChange(e.target.value)}
+              onFocus={() => { if (dropdownItems.length > 0 && !selectedStock) setShowDropdown(true); }}
               className="w-full px-4 py-2.5 bg-gray-800 border border-gray-700 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
             />
+            {selectedStock && (
+              <p className="mt-1 text-xs text-gray-400">{selectedStock.name || selectedStock.symbol}</p>
+            )}
+
+            {showDropdown && (
+              <div className="absolute z-50 w-full mt-1 bg-gray-800 border border-gray-700 rounded-lg shadow-xl max-h-60 overflow-y-auto">
+                {dropdownItems.map((stock) => (
+                  <button
+                    key={stock.symbol}
+                    type="button"
+                    onClick={() => handleSelectStock(stock)}
+                    className="w-full px-4 py-2.5 text-left hover:bg-gray-700 transition-colors flex items-center justify-between"
+                  >
+                    <div>
+                      <span className="text-white font-medium">{stock.symbol}</span>
+                      {stock.name && (
+                        <span className="text-gray-400 text-sm ml-2">{stock.name}</span>
+                      )}
+                    </div>
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
 
           <div className="grid grid-cols-2 gap-4">
@@ -183,7 +266,7 @@ export default function Home() {
                     <button
                       key={s}
                       type="button"
-                      onClick={() => { setSymbol(s); setError(""); setSuggestions([]); }}
+                      onClick={() => { setSymbol(s); setSelectedStock(null); setError(""); setSuggestions([]); }}
                       className="px-2 py-0.5 bg-blue-600 hover:bg-blue-700 text-white text-xs rounded transition-colors"
                     >
                       {s}
