@@ -102,7 +102,7 @@ def extract_stock_data(symbol, from_d, to_d):
                     raise Exception(f"Failed to fetch data for {chunk_start} to {chunk_end}: {e}")
 
         if chunk_end < to_d:
-            time.sleep(1)
+            time.sleep(2)
 
     if not all_dfs:
         return None
@@ -127,9 +127,7 @@ def lambda_handler(event, context):
         "Access-Control-Allow-Headers": "Content-Type",
     }
 
-    # Handle both API Gateway and Function URL event formats
-    http_method = event.get("httpMethod") or event.get("requestContext", {}).get("http", {}).get("method", "")
-    if http_method == "OPTIONS":
+    if event.get("httpMethod") == "OPTIONS":
         return {"statusCode": 200, "headers": headers, "body": ""}
 
     try:

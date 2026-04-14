@@ -1,7 +1,6 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
-import * as XLSX from "xlsx";
 import nseSymbols from "./nse-symbols.json";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "";
@@ -14,7 +13,6 @@ export default function Home() {
   const [toDate, setToDate] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-  const [progress, setProgress] = useState("");
   const [suggestions, setSuggestions] = useState<string[]>([]);
   const [result, setResult] = useState<{ rows: number; filename: string } | null>(null);
 
@@ -80,66 +78,9 @@ export default function Home() {
     return `${day}-${month}-${year}`;
   };
 
-  // Split date range into chunks of maxYears
-  const splitDateRange = (from: string, to: string, maxYears: number) => {
-    const fromParts = from.split("-").map(Number); // YYYY-MM-DD
-    const toParts = to.split("-").map(Number);
-    const fromDate = new Date(fromParts[0], fromParts[1] - 1, fromParts[2]);
-    const toDate = new Date(toParts[0], toParts[1] - 1, toParts[2]);
-
-    const chunks: { from: string; to: string }[] = [];
-    const current = new Date(fromDate);
-
-    while (current < toDate) {
-      const chunkEnd = new Date(current);
-      chunkEnd.setFullYear(chunkEnd.getFullYear() + maxYears);
-      chunkEnd.setDate(chunkEnd.getDate() - 1);
-
-      const end = chunkEnd > toDate ? toDate : chunkEnd;
-      const fmtFrom = `${String(current.getDate()).padStart(2, "0")}-${String(current.getMonth() + 1).padStart(2, "0")}-${current.getFullYear()}`;
-      const fmtTo = `${String(end.getDate()).padStart(2, "0")}-${String(end.getMonth() + 1).padStart(2, "0")}-${end.getFullYear()}`;
-      chunks.push({ from: fmtFrom, to: fmtTo });
-
-      current.setTime(chunkEnd.getTime());
-      current.setDate(current.getDate() + 1);
-    }
-    return chunks;
-  };
-
-  // Single API call with retry
-  const fetchChunk = async (sym: string, from: string, to: string): Promise<{ download_url: string; filename: string; rows: number } | { error: string; suggestions?: string[] }> => {
-    for (let attempt = 0; attempt < 2; attempt++) {
-      try {
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 35000);
-
-        const response = await fetch(API_URL, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ symbol: sym, from_date: from, to_date: to }),
-          signal: controller.signal,
-        });
-
-        clearTimeout(timeoutId);
-        const data = await response.json();
-
-        if (!response.ok) {
-          if (response.status === 400) return { error: data.error, suggestions: data.suggestions };
-          throw new Error(data.error || "Server error");
-        }
-
-        return data;
-      } catch {
-        if (attempt < 1) await new Promise(r => setTimeout(r, 1000));
-      }
-    }
-    return { error: "Failed to connect to the server." };
-  };
-
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
-    setProgress("");
     setSuggestions([]);
     setResult(null);
     setShowDropdown(false);
@@ -157,107 +98,63 @@ export default function Home() {
     setLoading(true);
 
     try {
-      const sym = symbol.toUpperCase();
+      const payload = JSON.stringify({
+        symbol: symbol.toUpperCase(),
+        from_date: formatDateForApi(fromDate),
+        to_date: formatDateForApi(toDate),
+      });
 
-      // Split into 1-year chunks to stay within API Gateway 29s timeout
-      const chunks = splitDateRange(fromDate, toDate, 1);
+      // Retry up to 3 times (handles Lambda cold starts & API Gateway timeouts)
+      let lastError = "";
+      for (let attempt = 0; attempt < 3; attempt++) {
+        try {
+          if (attempt === 1) setError("Server is warming up, retrying...");
+          if (attempt === 2) setError("Almost there, one more try...");
 
-      if (chunks.length === 1) {
-        // Single chunk — simple flow
-        setProgress("Extracting data from NSE...");
-        const result = await fetchChunk(sym, chunks[0].from, chunks[0].to);
+          const controller = new AbortController();
+          const timeoutId = setTimeout(() => controller.abort(), 120000);
 
-        if ("error" in result) {
-          setError(result.error);
-          if (result.suggestions) setSuggestions(result.suggestions);
-          return;
-        }
+          const response = await fetch(API_URL, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: payload,
+            signal: controller.signal,
+          });
 
-        setResult({ rows: result.rows, filename: result.filename });
-        setError("");
-        setProgress("");
+          clearTimeout(timeoutId);
 
-        const link = document.createElement("a");
-        link.href = result.download_url;
-        link.download = result.filename;
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
-      } else {
-        // Multiple chunks — fetch each, combine into one Excel file
-        let totalRows = 0;
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const allData: any[][] = [];
-        let headerRow: string[] = [];
+          const data = await response.json();
 
-        for (let i = 0; i < chunks.length; i++) {
-          setProgress(`Fetching part ${i + 1} of ${chunks.length}... (${chunks[i].from} to ${chunks[i].to})`);
-
-          const result = await fetchChunk(sym, chunks[i].from, chunks[i].to);
-
-          if ("error" in result) {
-            if (i === 0) {
-              setError(result.error);
-              if (result.suggestions) setSuggestions(result.suggestions);
+          if (!response.ok) {
+            if (response.status === 400) {
+              setError(data.error || "Something went wrong.");
+              if (data.suggestions) setSuggestions(data.suggestions);
               return;
             }
-            continue;
+            throw new Error(data.error || "Server error");
           }
 
-          // Download the Excel file and read its data
-          const response = await fetch(result.download_url);
-          const arrayBuffer = await response.arrayBuffer();
-          const workbook = XLSX.read(arrayBuffer, { type: "array" });
-          const sheet = workbook.Sheets[workbook.SheetNames[0]];
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          const rows: any[][] = XLSX.utils.sheet_to_json(sheet, { header: 1 });
+          setResult({ rows: data.rows, filename: data.filename });
+          setError("");
 
-          if (rows.length > 0) {
-            if (headerRow.length === 0) {
-              headerRow = rows[0] as string[];
-              allData.push(headerRow);
-            }
-            // Add data rows (skip header)
-            for (let r = 1; r < rows.length; r++) {
-              allData.push(rows[r]);
-            }
-            totalRows += rows.length - 1;
-          }
-
-          if (i < chunks.length - 1) await new Promise(r => setTimeout(r, 500));
-        }
-
-        if (totalRows === 0) {
-          setError("No data found for this date range.");
+          const link = document.createElement("a");
+          link.href = data.download_url;
+          link.download = data.filename;
+          document.body.appendChild(link);
+          link.click();
+          document.body.removeChild(link);
           return;
+        } catch (err) {
+          if (err instanceof Error && err.message && !err.message.includes("abort")) {
+            lastError = err.message;
+          } else {
+            lastError = "Failed to connect to the server.";
+          }
+          if (attempt < 2) await new Promise(r => setTimeout(r, 2000));
         }
-
-        // Create combined Excel file
-        setProgress("Combining data and preparing download...");
-        const ws = XLSX.utils.aoa_to_sheet(allData);
-
-        // Auto-adjust column widths
-        const colWidths = headerRow.map((h, i) => {
-          const maxLen = Math.max(
-            String(h).length,
-            ...allData.slice(1).map(row => String(row[i] || "").length)
-          );
-          return { wch: maxLen + 3 };
-        });
-        ws["!cols"] = colWidths;
-
-        const wb = XLSX.utils.book_new();
-        XLSX.utils.book_append_sheet(wb, ws, "Historical Data");
-
-        const fromApi = formatDateForApi(fromDate).replace(/-/g, "");
-        const toApi = formatDateForApi(toDate).replace(/-/g, "");
-        const filename = `${sym}_Historical_${fromApi}_to_${toApi}.xlsx`;
-
-        XLSX.writeFile(wb, filename);
-
-        setResult({ rows: totalRows, filename });
-        setError("");
       }
+
+      setError(lastError + " Please try again.");
     } finally {
       setLoading(false);
     }
@@ -358,16 +255,6 @@ export default function Home() {
               "Download Historical Data"
             )}
           </button>
-
-          {progress && !error && (
-            <div className="p-3 bg-blue-900/50 border border-blue-700 rounded-lg text-blue-300 text-sm flex items-center gap-2">
-              <svg className="animate-spin h-4 w-4 shrink-0" viewBox="0 0 24 24">
-                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
-                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-              </svg>
-              {progress}
-            </div>
-          )}
 
           {error && (
             <div className="p-3 bg-red-900/50 border border-red-700 rounded-lg text-red-300 text-sm">
