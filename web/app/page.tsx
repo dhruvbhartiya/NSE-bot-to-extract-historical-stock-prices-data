@@ -551,9 +551,20 @@ export default function Home() {
           )}
         </form>
 
-        <p className="text-gray-600 text-xs text-center mt-4">
-          Data is fetched directly from NSE India. Large date ranges may take longer.
-        </p>
+        <div className="mt-4 space-y-2 text-center text-xs text-gray-600">
+          <p>Data is fetched directly from NSE India. Large date ranges may take longer.</p>
+          <p>
+            Made by Dhruv Bhartiya.{" "}
+            <a
+              href="https://dhruvbhartiya.com"
+              target="_blank"
+              rel="noreferrer"
+              className="text-blue-400 transition-colors hover:text-blue-300"
+            >
+              dhruvbhartiya.com
+            </a>
+          </p>
+        </div>
       </div>
     </main>
   );
