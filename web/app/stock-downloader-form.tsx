@@ -3,7 +3,6 @@
 import { useEffect, useRef, useState } from "react";
 import ExcelJS from "exceljs";
 import nseSymbols from "./nse-symbols.json";
-import { creatorUrl, faqItems, featureCards, siteCreator } from "../lib/site";
 
 const API_URL = "/api/extract";
 const XLSX_MIME_TYPE =
@@ -18,7 +17,7 @@ type FetchSuccess = {
 };
 type FetchFailure = { error: string; suggestions?: string[] };
 
-export default function HomePageClient() {
+export default function StockDownloaderForm() {
   const [symbol, setSymbol] = useState("");
   const [fromDate, setFromDate] = useState("");
   const [toDate, setToDate] = useState("");
@@ -373,258 +372,162 @@ export default function HomePageClient() {
   };
 
   return (
-    <main className="flex-1 bg-gray-950 px-4 py-12 text-white">
-      <div className="mx-auto w-full max-w-5xl">
-        <section className="text-center">
-          <span className="inline-flex items-center rounded-full border border-blue-500/30 bg-blue-500/10 px-3 py-1 text-xs font-medium tracking-[0.18em] text-blue-200 uppercase">
-            NSE India Market Data Export
-          </span>
-          <h1 className="mt-6 text-4xl font-bold tracking-tight text-white sm:text-5xl">
-            Download NSE Historical Stock Data in Excel
-          </h1>
-          <p className="mx-auto mt-4 max-w-2xl text-base leading-7 text-gray-300 sm:text-lg">
-            Search NSE-listed companies by stock symbol or business name, choose a
-            date range, and download historical stock prices in a spreadsheet-ready
-            Excel file.
+    <form onSubmit={handleSubmit} className="bg-gray-900 rounded-xl p-6 shadow-lg space-y-5">
+      <div ref={dropdownRef} className="relative">
+        <label htmlFor="symbol" className="block text-sm font-medium text-gray-300 mb-1">
+          Stock Symbol
+        </label>
+        <input
+          id="symbol"
+          type="text"
+          autoComplete="off"
+          placeholder="Type stock name or symbol..."
+          value={symbol}
+          onChange={(event) => handleSymbolChange(event.target.value)}
+          onFocus={() => {
+            if (dropdownItems.length > 0 && !selectedStock) {
+              setShowDropdown(true);
+            }
+          }}
+          className="w-full px-4 py-2.5 bg-gray-800 border border-gray-700 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+        />
+        {selectedStock && (
+          <p className="mt-1 text-xs text-gray-400">
+            {selectedStock.name || selectedStock.symbol}
           </p>
-        </section>
+        )}
 
-        <div className="mx-auto mt-10 w-full max-w-md">
-          <form
-            onSubmit={handleSubmit}
-            className="bg-gray-900 rounded-xl p-6 shadow-lg space-y-5"
-          >
-            <div ref={dropdownRef} className="relative">
-              <label
-                htmlFor="symbol"
-                className="block text-sm font-medium text-gray-300 mb-1"
+        {showDropdown && (
+          <div className="absolute z-50 w-full mt-1 bg-gray-800 border border-gray-700 rounded-lg shadow-xl max-h-60 overflow-y-auto">
+            {dropdownItems.map((stock) => (
+              <button
+                key={stock.symbol}
+                type="button"
+                onClick={() => handleSelectStock(stock)}
+                className="w-full px-4 py-2.5 text-left hover:bg-gray-700 transition-colors flex items-center justify-between"
               >
-                Stock Symbol
-              </label>
-              <input
-                id="symbol"
-                type="text"
-                autoComplete="off"
-                placeholder="Type stock name or symbol..."
-                value={symbol}
-                onChange={(event) => handleSymbolChange(event.target.value)}
-                onFocus={() => {
-                  if (dropdownItems.length > 0 && !selectedStock) {
-                    setShowDropdown(true);
-                  }
-                }}
-                className="w-full px-4 py-2.5 bg-gray-800 border border-gray-700 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-              />
-              {selectedStock && (
-                <p className="mt-1 text-xs text-gray-400">
-                  {selectedStock.name || selectedStock.symbol}
-                </p>
-              )}
-
-              {showDropdown && (
-                <div className="absolute z-50 w-full mt-1 bg-gray-800 border border-gray-700 rounded-lg shadow-xl max-h-60 overflow-y-auto">
-                  {dropdownItems.map((stock) => (
-                    <button
-                      key={stock.symbol}
-                      type="button"
-                      onClick={() => handleSelectStock(stock)}
-                      className="w-full px-4 py-2.5 text-left hover:bg-gray-700 transition-colors flex items-center justify-between"
-                    >
-                      <div>
-                        <span className="text-white font-medium">{stock.symbol}</span>
-                        {stock.name && (
-                          <span className="text-gray-400 text-sm ml-2">{stock.name}</span>
-                        )}
-                      </div>
-                    </button>
-                  ))}
+                <div>
+                  <span className="text-white font-medium">{stock.symbol}</span>
+                  {stock.name && (
+                    <span className="text-gray-400 text-sm ml-2">{stock.name}</span>
+                  )}
                 </div>
-              )}
-            </div>
-
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <label
-                  htmlFor="fromDate"
-                  className="block text-sm font-medium text-gray-300 mb-1"
-                >
-                  From Date
-                </label>
-                <input
-                  id="fromDate"
-                  type="date"
-                  value={fromDate}
-                  onChange={(event) => setFromDate(event.target.value)}
-                  className="w-full px-4 py-2.5 bg-gray-800 border border-gray-700 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                />
-              </div>
-              <div>
-                <label
-                  htmlFor="toDate"
-                  className="block text-sm font-medium text-gray-300 mb-1"
-                >
-                  To Date
-                </label>
-                <input
-                  id="toDate"
-                  type="date"
-                  value={toDate}
-                  onChange={(event) => setToDate(event.target.value)}
-                  className="w-full px-4 py-2.5 bg-gray-800 border border-gray-700 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                />
-              </div>
-            </div>
-
-            <button
-              type="submit"
-              disabled={loading}
-              className="w-full py-3 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-800 disabled:cursor-not-allowed text-white font-semibold rounded-lg transition-colors"
-            >
-              {loading ? (
-                <span className="flex items-center justify-center gap-2">
-                  <svg className="animate-spin h-5 w-5" viewBox="0 0 24 24">
-                    <circle
-                      className="opacity-25"
-                      cx="12"
-                      cy="12"
-                      r="10"
-                      stroke="currentColor"
-                      strokeWidth="4"
-                      fill="none"
-                    />
-                    <path
-                      className="opacity-75"
-                      fill="currentColor"
-                      d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"
-                    />
-                  </svg>
-                  Extracting data from NSE...
-                </span>
-              ) : (
-                "Download Historical Data"
-              )}
-            </button>
-
-            {progress && !error && (
-              <div className="p-3 bg-blue-900/50 border border-blue-700 rounded-lg text-blue-300 text-sm flex items-center gap-2">
-                <svg className="animate-spin h-4 w-4 shrink-0" viewBox="0 0 24 24">
-                  <circle
-                    className="opacity-25"
-                    cx="12"
-                    cy="12"
-                    r="10"
-                    stroke="currentColor"
-                    strokeWidth="4"
-                    fill="none"
-                  />
-                  <path
-                    className="opacity-75"
-                    fill="currentColor"
-                    d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"
-                  />
-                </svg>
-                {progress}
-              </div>
-            )}
-
-            {error && (
-              <div className="p-3 bg-red-900/50 border border-red-700 rounded-lg text-red-300 text-sm">
-                {error}
-                {suggestions.length > 0 && (
-                  <div className="mt-2 flex flex-wrap gap-2">
-                    <span className="text-red-400">Try:</span>
-                    {suggestions.map((suggestion) => (
-                      <button
-                        key={suggestion}
-                        type="button"
-                        onClick={() => {
-                          setSymbol(suggestion);
-                          setSelectedStock(null);
-                          setError("");
-                          setSuggestions([]);
-                        }}
-                        className="px-2 py-0.5 bg-blue-600 hover:bg-blue-700 text-white text-xs rounded transition-colors"
-                      >
-                        {suggestion}
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </div>
-            )}
-
-            {result && (
-              <div className="p-3 bg-green-900/50 border border-green-700 rounded-lg text-green-300 text-sm">
-                Downloaded {result.rows} records as {result.filename}
-              </div>
-            )}
-          </form>
-
-          <div className="mt-4 space-y-2 text-center text-xs text-gray-500">
-            <p>Data is fetched directly from NSE India. Large date ranges may take longer.</p>
-            <p>
-              Made by {siteCreator}.{" "}
-              <a
-                href={creatorUrl}
-                target="_blank"
-                rel="noreferrer"
-                className="text-blue-400 transition-colors hover:text-blue-300"
-              >
-                dhruvbhartiya.com
-              </a>
-            </p>
-          </div>
-        </div>
-
-        <section className="mt-14 grid gap-4 md:grid-cols-3">
-          {featureCards.map((card) => (
-            <article
-              key={card.title}
-              className="rounded-2xl border border-white/8 bg-white/4 p-5"
-            >
-              <h2 className="text-lg font-semibold text-white">{card.title}</h2>
-              <p className="mt-2 text-sm leading-6 text-gray-300">{card.description}</p>
-            </article>
-          ))}
-        </section>
-
-        <section className="mt-12 grid gap-6 md:grid-cols-2">
-          <article className="rounded-2xl border border-white/8 bg-gray-900/60 p-6">
-            <h2 className="text-xl font-semibold text-white">
-              Download NSE historical data without manual cleanup
-            </h2>
-            <p className="mt-3 text-sm leading-7 text-gray-300">
-              This tool is built for traders, investors, students, and analysts who
-              need reliable historical stock price downloads from NSE India. Instead
-              of manually copying market data into spreadsheets, you can export a
-              ready-to-use Excel file in a few steps.
-            </p>
-          </article>
-
-          <article className="rounded-2xl border border-white/8 bg-gray-900/60 p-6">
-            <h2 className="text-xl font-semibold text-white">How the downloader works</h2>
-            <p className="mt-3 text-sm leading-7 text-gray-300">
-              Enter an NSE stock symbol, select your from and to dates, and start the
-              download. The app fetches the data, combines multi-part requests when
-              needed, and returns one Excel workbook for easier analysis.
-            </p>
-          </article>
-        </section>
-
-        <section className="mt-12 rounded-2xl border border-white/8 bg-gray-900/60 p-6">
-          <h2 className="text-2xl font-semibold text-white">
-            Frequently asked questions
-          </h2>
-          <div className="mt-6 space-y-5">
-            {faqItems.map((item) => (
-              <article key={item.question}>
-                <h3 className="text-base font-semibold text-white">{item.question}</h3>
-                <p className="mt-2 text-sm leading-7 text-gray-300">{item.answer}</p>
-              </article>
+              </button>
             ))}
           </div>
-        </section>
+        )}
       </div>
-    </main>
+
+      <div className="grid grid-cols-2 gap-4">
+        <div>
+          <label htmlFor="fromDate" className="block text-sm font-medium text-gray-300 mb-1">
+            From Date
+          </label>
+          <input
+            id="fromDate"
+            type="date"
+            value={fromDate}
+            onChange={(event) => setFromDate(event.target.value)}
+            className="w-full px-4 py-2.5 bg-gray-800 border border-gray-700 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+          />
+        </div>
+        <div>
+          <label htmlFor="toDate" className="block text-sm font-medium text-gray-300 mb-1">
+            To Date
+          </label>
+          <input
+            id="toDate"
+            type="date"
+            value={toDate}
+            onChange={(event) => setToDate(event.target.value)}
+            className="w-full px-4 py-2.5 bg-gray-800 border border-gray-700 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+          />
+        </div>
+      </div>
+
+      <button
+        type="submit"
+        disabled={loading}
+        className="w-full py-3 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-800 disabled:cursor-not-allowed text-white font-semibold rounded-lg transition-colors"
+      >
+        {loading ? (
+          <span className="flex items-center justify-center gap-2">
+            <svg className="animate-spin h-5 w-5" viewBox="0 0 24 24">
+              <circle
+                className="opacity-25"
+                cx="12"
+                cy="12"
+                r="10"
+                stroke="currentColor"
+                strokeWidth="4"
+                fill="none"
+              />
+              <path
+                className="opacity-75"
+                fill="currentColor"
+                d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"
+              />
+            </svg>
+            Extracting data from NSE...
+          </span>
+        ) : (
+          "Download Historical Data"
+        )}
+      </button>
+
+      {progress && !error && (
+        <div className="p-3 bg-blue-900/50 border border-blue-700 rounded-lg text-blue-300 text-sm flex items-center gap-2">
+          <svg className="animate-spin h-4 w-4 shrink-0" viewBox="0 0 24 24">
+            <circle
+              className="opacity-25"
+              cx="12"
+              cy="12"
+              r="10"
+              stroke="currentColor"
+              strokeWidth="4"
+              fill="none"
+            />
+            <path
+              className="opacity-75"
+              fill="currentColor"
+              d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"
+            />
+          </svg>
+          {progress}
+        </div>
+      )}
+
+      {error && (
+        <div className="p-3 bg-red-900/50 border border-red-700 rounded-lg text-red-300 text-sm">
+          {error}
+          {suggestions.length > 0 && (
+            <div className="mt-2 flex flex-wrap gap-2">
+              <span className="text-red-400">Try:</span>
+              {suggestions.map((suggestion) => (
+                <button
+                  key={suggestion}
+                  type="button"
+                  onClick={() => {
+                    setSymbol(suggestion);
+                    setSelectedStock(null);
+                    setError("");
+                    setSuggestions([]);
+                  }}
+                  className="px-2 py-0.5 bg-blue-600 hover:bg-blue-700 text-white text-xs rounded transition-colors"
+                >
+                  {suggestion}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {result && (
+        <div className="p-3 bg-green-900/50 border border-green-700 rounded-lg text-green-300 text-sm">
+          Downloaded {result.rows} records as {result.filename}
+        </div>
+      )}
+    </form>
   );
 }
