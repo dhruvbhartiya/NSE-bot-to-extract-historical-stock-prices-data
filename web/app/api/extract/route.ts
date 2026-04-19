@@ -58,6 +58,25 @@ async function proxyToUpstream(upstreamUrl: string, payload: RequestPayload) {
     };
   }
 
+  if (response.ok && "download_url" in parsedBody && parsedBody.download_url && !parsedBody.file_base64) {
+    const fileResponse = await fetch(parsedBody.download_url, { cache: "no-store" });
+
+    if (!fileResponse.ok) {
+      return NextResponse.json(
+        {
+          error: `The generated file could not be downloaded from the upstream service (${fileResponse.status}).`,
+        },
+        { status: 502 },
+      );
+    }
+
+    const fileBuffer = Buffer.from(await fileResponse.arrayBuffer());
+    parsedBody = {
+      ...parsedBody,
+      file_base64: fileBuffer.toString("base64"),
+    };
+  }
+
   return NextResponse.json(parsedBody, { status: response.status });
 }
 
