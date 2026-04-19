@@ -1,4 +1,4 @@
-export const siteName = "NSE Historical Data Downloader";
+export const siteName = "NSE Historical Data";
 export const siteCreator = "Dhruv Bhartiya";
 export const creatorUrl = "https://dhruvbhartiya.com";
 export const siteDescription =
